@@ -38,12 +38,12 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: npm
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
         with:
           targets: ${{ matrix.targets }}
       - name: Install Linux desktop dependencies
@@ -54,7 +54,7 @@ jobs:
           libc++-dev libc++abi-dev
       - run: npm ci
       - id: tauri
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -71,8 +71,9 @@ jobs:
             These builds are not Apple-notarized or commercially code-signed. Follow the unsigned installation instructions in the README and verify the published SHA-256 checksums.
           releaseDraft: true
           prerelease: false
-          uploadUpdaterJson: true
+          includeUpdaterJson: true
           updaterJsonPreferNsis: true
+          updaterJsonKeepUniversal: true
       - name: Generate and upload SHA-256 checksums
         shell: pwsh
         env:
