@@ -82,7 +82,7 @@ jobs:
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
           ASSET_PATTERN: ${{ matrix.checksum_pattern }}
         run: |
-          $release = gh api "repos/H34TB145T/TiVault/releases/tags/$env:RELEASE_TAG" | ConvertFrom-Json
+          $release = gh release view $env:RELEASE_TAG --repo H34TB145T/TiVault --json assets | ConvertFrom-Json
           $assets = $release.assets | Where-Object {
             $_.name -match $env:ASSET_PATTERN -and -not $_.name.EndsWith('.sig')
           }
