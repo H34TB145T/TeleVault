@@ -3556,6 +3556,7 @@ mod tests {
     };
     use crate::error::AppError;
     use std::fs;
+    use std::path::Path;
 
     #[test]
     fn folder_upload_collects_nested_files_in_stable_order() {
@@ -3570,8 +3571,8 @@ mod tests {
                 .unwrap();
 
         assert_eq!(files.len(), 2);
-        assert!(files[0].ends_with("notes/readme.txt"));
-        assert!(files[1].ends_with("photo.jpg"));
+        assert!(Path::new(&files[0]).ends_with(Path::new("notes").join("readme.txt")));
+        assert!(Path::new(&files[1]).ends_with("photo.jpg"));
     }
 
     #[test]

@@ -25,7 +25,7 @@ jobs:
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 
   rust:
-    name: Rust tests (${{ matrix.platform }})
+    name: Desktop build and tests (${{ matrix.platform }})
     strategy:
       fail-fast: false
       matrix:
@@ -37,7 +37,7 @@ jobs:
           - platform: Windows
             os: windows-2022
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -53,4 +53,5 @@ jobs:
           libc++-dev libc++abi-dev
       - run: npm ci
       - run: npm run build:desktop
-      - run: cargo test --manifest-path src-tauri/Cargo.toml
+      - run: cargo test --release --manifest-path src-tauri/Cargo.toml
+      - run: npm run tauri -- build --no-bundle
