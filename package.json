@@ -11,7 +11,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "tauri": "tauri",
-    "desktop:dev": "tauri dev",
+    "desktop:dev": "npm run build:desktop && tauri dev",
     "desktop:build": "tauri build"
   },
   "dependencies": {
