@@ -74,9 +74,7 @@ jobs:
             These builds are not Apple-notarized or commercially code-signed. Follow the unsigned installation instructions in the README and verify the published SHA-256 checksums.
           releaseDraft: true
           prerelease: false
-          includeUpdaterJson: true
-          updaterJsonPreferNsis: true
-          updaterJsonKeepUniversal: true
+          includeUpdaterJson: false
       - name: Generate and upload SHA-256 checksums
         shell: pwsh
         env:
@@ -104,6 +102,65 @@ jobs:
     needs: build
     runs-on: ubuntu-24.04
     steps:
+      - name: Build final updater manifest from uploaded signatures
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          repo='H34TB145T/TeleVault'
+          tmp=$(mktemp -d)
+          trap 'rm -rf "$tmp"' EXIT
+          assets=$(gh release view "$RELEASE_TAG" --repo "$repo" --json assets)
+          asset_url() {
+            printf '%s' "$assets" | jq -er --arg suffix "$1" \
+              '.assets[] | select(.name | endswith($suffix)) | .url' | head -n 1
+          }
+          mac_url=$(asset_url '.app.tar.gz')
+          appimage_url=$(asset_url '.AppImage')
+          deb_url=$(asset_url '.deb')
+          rpm_url=$(asset_url '.rpm')
+          windows_url=$(asset_url '-setup.exe')
+          gh release download "$RELEASE_TAG" --repo "$repo" --dir "$tmp" --pattern '*.sig'
+          mac_sig="$tmp/$(basename "$mac_url").sig"
+          appimage_sig="$tmp/$(basename "$appimage_url").sig"
+          deb_sig="$tmp/$(basename "$deb_url").sig"
+          rpm_sig="$tmp/$(basename "$rpm_url").sig"
+          windows_sig="$tmp/$(basename "$windows_url").sig"
+          for signature in "$mac_sig" "$appimage_sig" "$deb_sig" "$rpm_sig" "$windows_sig"; do
+            test -s "$signature"
+          done
+          jq -n \
+            --arg version "${RELEASE_TAG#v}" \
+            --arg notes 'TeleVault alpha release. Back up your recovery key and test with non-critical files first.' \
+            --arg pub_date "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+            --arg mac_url "$mac_url" --rawfile mac_sig "$mac_sig" \
+            --arg appimage_url "$appimage_url" --rawfile appimage_sig "$appimage_sig" \
+            --arg deb_url "$deb_url" --rawfile deb_sig "$deb_sig" \
+            --arg rpm_url "$rpm_url" --rawfile rpm_sig "$rpm_sig" \
+            --arg windows_url "$windows_url" --rawfile windows_sig "$windows_sig" \
+            'def clean: gsub("[\\r\\n]+$"; "");
+             {
+               version: $version,
+               notes: $notes,
+               pub_date: $pub_date,
+               platforms: {
+                 "darwin-aarch64": {signature: ($mac_sig|clean), url: $mac_url},
+                 "darwin-x86_64": {signature: ($mac_sig|clean), url: $mac_url},
+                 "darwin-universal": {signature: ($mac_sig|clean), url: $mac_url},
+                 "darwin-aarch64-app": {signature: ($mac_sig|clean), url: $mac_url},
+                 "darwin-x86_64-app": {signature: ($mac_sig|clean), url: $mac_url},
+                 "darwin-universal-app": {signature: ($mac_sig|clean), url: $mac_url},
+                 "linux-x86_64": {signature: ($appimage_sig|clean), url: $appimage_url},
+                 "linux-x86_64-appimage": {signature: ($appimage_sig|clean), url: $appimage_url},
+                 "linux-x86_64-deb": {signature: ($deb_sig|clean), url: $deb_url},
+                 "linux-x86_64-rpm": {signature: ($rpm_sig|clean), url: $rpm_url},
+                 "windows-x86_64": {signature: ($windows_sig|clean), url: $windows_url},
+                 "windows-x86_64-nsis": {signature: ($windows_sig|clean), url: $windows_url}
+               }
+             }' > "$tmp/latest.json"
+          jq -e '.platforms | length == 12' "$tmp/latest.json" >/dev/null
+          gh release upload "$RELEASE_TAG" "$tmp/latest.json" --repo "$repo" --clobber
       - name: Publish release after all installers succeed
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
