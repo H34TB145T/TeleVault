@@ -17,7 +17,7 @@ The recovery key is generated locally and stored through the operating system cr
 
 The optional app lock stores only an Argon2id password verifier. When locked, both Tauri commands and localhost API routes reject vault operations. The idle timeout is driven by real keyboard and pointer activity; background dashboard polling does not keep the app unlocked. App lock is a privacy barrier inside the application, not a substitute for OS login security or full-disk encryption.
 
-Telegram session databases and API configuration also live in the private application-data directory. Any process already running as the same OS user may be able to read that directory, so full-disk encryption and a locked OS account remain important.
+Telegram API hashes are stored per account in macOS Keychain, Windows Credential Manager or Linux Secret Service. Existing SQLite values are migrated only after the credential vault write is verified, then scrubbed from the catalogue. If a platform credential vault is temporarily unavailable, TeleVault retains the legacy value rather than destroying a working login. Telegram session databases remain in the private application-data directory. TeleVault enforces owner-only modes on Unix and a protected owner-only ACL on Windows for its private directory tree and SQLite files. Any process already running as the same OS user may still be able to read application data, so full-disk encryption and a locked OS account remain important.
 
 ## Web companion
 

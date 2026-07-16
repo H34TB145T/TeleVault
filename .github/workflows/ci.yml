@@ -6,21 +6,45 @@ on:
   pull_request:
 
 jobs:
-  verify:
+  quality:
+    name: Frontend and formatting
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
-      - name: Install Linux desktop dependencies
-        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libc++-dev libc++abi-dev
       - run: npm ci
       - run: npm run build:desktop
       - run: npm test
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+
+  rust:
+    name: Rust tests (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: Linux
+            os: ubuntu-24.04
+          - platform: macOS
+            os: macos-14
+          - platform: Windows
+            os: windows-2022
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Linux desktop dependencies
+        if: runner.os == 'Linux'
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          libc++-dev libc++abi-dev
       - run: cargo test --manifest-path src-tauri/Cargo.toml

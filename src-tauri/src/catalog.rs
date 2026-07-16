@@ -6,6 +6,8 @@ use crate::models::{
 use rusqlite::{params, Connection, OptionalExtension};
 use std::path::{Path, PathBuf};
 
+use crate::security::set_private_file_permissions;
+
 const DEFAULT_CACHE_LIMIT: u64 = 25 * 1024 * 1024 * 1024;
 const DEFAULT_PREVIEW_CACHE_LIMIT: u64 = 512 * 1024 * 1024;
 
@@ -47,6 +49,15 @@ impl Catalog {
         connection.pragma_update(None, "foreign_keys", "ON")?;
         connection.pragma_update(None, "journal_mode", "WAL")?;
         connection.busy_timeout(std::time::Duration::from_secs(5))?;
+        for path in [
+            self.path.clone(),
+            PathBuf::from(format!("{}-wal", self.path.display())),
+            PathBuf::from(format!("{}-shm", self.path.display())),
+        ] {
+            if path.exists() {
+                set_private_file_permissions(&path)?;
+            }
+        }
         Ok(connection)
     }
 
@@ -596,6 +607,22 @@ impl Catalog {
              ON CONFLICT(id) DO UPDATE SET name=excluded.name,phone=excluded.phone,api_id=excluded.api_id,api_hash=excluded.api_hash,session_path=excluded.session_path,connected=1",
             params![credentials.id, credentials.name, credentials.phone, credentials.api_id, credentials.api_hash, credentials.session_path, color, now()]
         )?;
+        Ok(())
+    }
+
+    pub fn legacy_api_hashes(&self) -> AppResult<Vec<(String, String)>> {
+        let connection = self.connection()?;
+        let mut statement =
+            connection.prepare("SELECT id,api_hash FROM accounts WHERE api_hash!=''")?;
+        let rows = statement
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    pub fn clear_api_hash(&self, account_id: &str) -> AppResult<()> {
+        self.connection()?
+            .execute("UPDATE accounts SET api_hash='' WHERE id=?1", [account_id])?;
         Ok(())
     }
 

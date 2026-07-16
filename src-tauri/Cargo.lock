@@ -4806,7 +4806,7 @@ checksum = "3d792369bc9984e0a469c0acff4dea61f3bc63c4a6a4a70005e109ba899d7762"
 
 [[package]]
 name = "televault"
-version = "0.1.0"
+version = "0.1.0-alpha"
 dependencies = [
  "argon2",
  "axum",
@@ -4837,6 +4837,7 @@ dependencies = [
  "tower-http",
  "uuid",
  "walkdir",
+ "windows-sys 0.61.2",
  "zeroize",
 ]
 

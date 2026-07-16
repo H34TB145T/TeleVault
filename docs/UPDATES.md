@@ -1,22 +1,18 @@
 # Signed TeleVault updates
 
-TeleVault includes Tauri's signature-verifying updater, but the ordinary local build intentionally has no update endpoint or public key. Never put the private signing key in this repository or in `tauri.conf.json`.
+TeleVault release artifacts use Tauri's mandatory updater signatures. This signature is independent from Apple or Microsoft commercial code signing: it lets an installed TeleVault build reject an update that was not signed by the maintainer's protected updater key.
 
-Before publishing releases:
+The public verification key and GitHub Releases endpoint are committed in `src-tauri/tauri.release.conf.json`. The encrypted private key and its password exist only in the maintainer's protected local key store and the repository secrets named `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
 
-1. Generate and securely back up the Tauri updater signing key. Treat losing the private key as permanent loss of the update channel.
-2. Copy `src-tauri/tauri.updater.example.conf.json` to an ignored release-only config and replace the public key and HTTPS endpoint.
-3. Configure Apple Developer ID signing and notarization for macOS. The updater signature does not replace platform code signing.
-4. Build with the release config and the private key supplied only through the release secret store:
+Release builds set two non-secret compile markers, `TELEVAULT_UPDATE_PUBLIC_KEY` and `TELEVAULT_UPDATE_ENDPOINT`, which enable the updater runtime and Settings UI. The actual trusted key and HTTPS endpoint come from the release configuration.
 
-   ```sh
-   TELEVAULT_UPDATE_PUBLIC_KEY=1 \
-   TELEVAULT_UPDATE_ENDPOINT=https://updates.example.com \
-   TAURI_SIGNING_PRIVATE_KEY="$TAURI_SIGNING_PRIVATE_KEY" \
-   TAURI_SIGNING_PRIVATE_KEY_PASSWORD="$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" \
-   npm run tauri build -- --config src-tauri/tauri.updater.conf.json
-   ```
+## Release process
 
-5. Publish the generated updater artifacts, signatures, and Tauri update JSON over HTTPS. Test an upgrade from the previous public version before announcing the release.
+1. Update the version consistently in `package.json`, `src-tauri/Cargo.toml` and `src-tauri/tauri.conf.json`.
+2. Run the complete local build and test suite.
+3. Create and push a matching `v*` tag.
+4. GitHub Actions builds Linux x64, Windows x64 and a universal macOS application with `src-tauri/tauri.release.conf.json`.
+5. Each matrix job uploads signed updater artifacts and a platform-specific SHA-256 checksum file to a draft release.
+6. The release is published only after every platform job succeeds. Tauri Action generates `latest.json` for the static updater endpoint.
 
-The two `TELEVAULT_UPDATE_*` variables are non-secret build markers that make the Settings page expose the update check. The actual endpoint and public key still come from the release config. The private key must exist only in the release environment.
+Never commit, print or send the private updater key or password. Losing either prevents installed copies from trusting future updates. Rotate a key only before the first public release or through an update signed by the old key.

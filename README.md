@@ -70,6 +70,16 @@ Build the installer for the current operating system:
 npm run desktop:build
 ```
 
+## Installing unsigned alpha builds
+
+Release installers are cryptographically verified by TeleVault's updater but are not commercially code-signed or Apple-notarized. Always download from this repository's Releases page and compare the installer against its published `SHA256SUMS` file.
+
+- **macOS:** Drag TeleVault to Applications. On first launch, Control-click the app, choose **Open**, then confirm **Open**. If macOS still blocks it, use **System Settings → Privacy & Security → Open Anyway**. Never disable Gatekeeper globally.
+- **Windows:** Microsoft Defender SmartScreen may show an unknown-publisher warning. Choose **More info → Run anyway** only after verifying the checksum and repository URL.
+- **Linux:** Prefer the packaged `.deb` where supported. For AppImage, mark it executable with `chmod +x TeleVault*.AppImage` before running it.
+
+TeleVault is alpha software. Export the recovery key, keep an offline backup, and test recovery with non-critical files before relying on the vault.
+
 ## Connecting Telegram
 
 1. Create a Telegram application at [my.telegram.org](https://my.telegram.org/).
@@ -77,7 +87,7 @@ npm run desktop:build
 3. Enter a profile name, international phone number, API ID and API hash.
 4. Complete the normal Telegram code and two-step verification flow.
 
-Never paste a Telegram login code, two-step password, session database or TeleVault recovery key into a GitHub issue.
+Never paste a Telegram API hash, login code, two-step password, session database or TeleVault recovery key into a GitHub issue.
 
 ## Project layout
 

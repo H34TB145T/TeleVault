@@ -1,6 +1,7 @@
 use crate::catalog::Catalog;
 use crate::error::{AppError, AppResult};
 use crate::models::{AccountCredentials, LoginRequest, LoginResult};
+use crate::security::{set_private_directory_permissions, TelegramCredentialStore};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -15,6 +16,7 @@ use tdlib_rs::{functions, types};
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio::sync::{broadcast, watch, Mutex, RwLock};
 use tokio::time::{timeout, Duration, Instant};
+use zeroize::Zeroize;
 
 const AUTH_TIMEOUT: Duration = Duration::from_secs(45);
 const FILE_OPERATION_TIMEOUT: Duration = Duration::from_secs(6 * 60 * 60);
@@ -58,6 +60,7 @@ pub struct OwnProfilePhoto {
 
 pub struct TelegramManager {
     catalog: Catalog,
+    credential_store: TelegramCredentialStore,
     sessions_dir: PathBuf,
     routes: Arc<StdRwLock<HashMap<i32, ClientRoute>>>,
     clients: Mutex<HashMap<String, Arc<ConnectedClient>>>,
@@ -70,6 +73,17 @@ pub struct TelegramManager {
 impl TelegramManager {
     pub fn new(catalog: Catalog, sessions_dir: PathBuf) -> AppResult<Self> {
         std::fs::create_dir_all(&sessions_dir)?;
+        set_private_directory_permissions(&sessions_dir)?;
+        let credential_store = TelegramCredentialStore;
+        for (account_id, mut api_hash) in catalog.legacy_api_hashes()? {
+            if credential_store
+                .store_api_hash(&account_id, &api_hash)
+                .is_ok()
+            {
+                catalog.clear_api_hash(&account_id)?;
+            }
+            api_hash.zeroize();
+        }
         let routes = Arc::new(StdRwLock::new(HashMap::<i32, ClientRoute>::new()));
         let receiver_stop = Arc::new(AtomicBool::new(false));
         let receiver_thread =
@@ -77,6 +91,7 @@ impl TelegramManager {
 
         Ok(Self {
             catalog,
+            credential_store,
             sessions_dir,
             routes,
             clients: Mutex::new(HashMap::new()),
@@ -138,7 +153,7 @@ impl TelegramManager {
     }
 
     pub async fn log_out_account(&self, account_id: &str) -> AppResult<PathBuf> {
-        let credentials = self.catalog.account_credentials(account_id)?;
+        let credentials = self.account_credentials(account_id)?;
         let existing = { self.clients.lock().await.remove(account_id) };
         let connection = match existing {
             Some(connection) => connection,
@@ -179,7 +194,7 @@ impl TelegramManager {
         phone_required: bool,
     ) -> AppResult<(AccountCredentials, bool)> {
         if let Some(account_id) = request.account_id.as_deref() {
-            let account = self.catalog.account_credentials(account_id)?;
+            let account = self.account_credentials(account_id)?;
             if account.api_id <= 0 || account.api_hash.trim().len() < 8 {
                 return Err(AppError::Message(
                     "The saved Telegram API credentials are invalid".into(),
@@ -210,6 +225,42 @@ impl TelegramManager {
             },
             true,
         ))
+    }
+
+    fn account_credentials(&self, account_id: &str) -> AppResult<AccountCredentials> {
+        let mut credentials = self.catalog.account_credentials(account_id)?;
+        match self.credential_store.api_hash(account_id) {
+            Ok(Some(api_hash)) => {
+                if !credentials.api_hash.is_empty() {
+                    credentials.api_hash.zeroize();
+                    self.catalog.clear_api_hash(account_id)?;
+                }
+                credentials.api_hash = api_hash;
+            }
+            Ok(None) if !credentials.api_hash.is_empty() => {
+                if self
+                    .credential_store
+                    .store_api_hash(account_id, &credentials.api_hash)
+                    .is_ok()
+                {
+                    self.catalog.clear_api_hash(account_id)?;
+                }
+            }
+            Ok(None) => {
+                return Err(AppError::Crypto(
+                    "This account's Telegram API hash is missing. Reconnect the account.".into(),
+                ));
+            }
+            Err(error) if !credentials.api_hash.is_empty() => {
+                let _ = error;
+            }
+            Err(error) => return Err(error),
+        }
+        Ok(credentials)
+    }
+
+    pub fn forget_account_credentials(&self, account_id: &str) -> AppResult<()> {
+        self.credential_store.remove_api_hash(account_id)
     }
 
     async fn wait_for_state<F>(
@@ -265,8 +316,10 @@ impl TelegramManager {
             )));
         }
         std::fs::create_dir_all(&session_path)?;
+        set_private_directory_permissions(&session_path)?;
         let files_path = session_path.join("files");
         std::fs::create_dir_all(&files_path)?;
+        set_private_directory_permissions(&files_path)?;
 
         let client_id = tdlib_rs::create_client();
         let (auth_tx, mut auth_rx) = watch::channel(None);
@@ -380,6 +433,13 @@ impl TelegramManager {
         let user = Self::load_identity(&flow.connection).await?;
         if !user.phone_number.is_empty() {
             flow.account.phone = format!("+{}", user.phone_number.trim_start_matches('+'));
+        }
+        if self
+            .credential_store
+            .store_api_hash(&flow.account.id, &flow.account.api_hash)
+            .is_ok()
+        {
+            flow.account.api_hash.zeroize();
         }
         self.catalog.insert_account(&flow.account)?;
         self.clients
@@ -663,7 +723,7 @@ impl TelegramManager {
             return Ok(client);
         }
 
-        let credentials = self.catalog.account_credentials(account_id)?;
+        let credentials = self.account_credentials(account_id)?;
         let (connection, _auth, state) = self.create_connection(&credentials, false).await?;
         if !matches!(state, AuthorizationState::Ready) {
             self.discard_connection(&connection, false).await;

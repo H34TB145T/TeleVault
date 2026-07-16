@@ -6,6 +6,66 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use zeroize::Zeroize;
 
+const KEYRING_SERVICE: &str = "app.televault.desktop";
+
+#[derive(Clone, Default)]
+pub struct TelegramCredentialStore;
+
+impl TelegramCredentialStore {
+    fn entry(account_id: &str) -> AppResult<keyring::Entry> {
+        keyring::Entry::new(KEYRING_SERVICE, &format!("telegram-api-hash:{account_id}")).map_err(
+            |_| AppError::Crypto("The operating-system credential vault is unavailable".into()),
+        )
+    }
+
+    pub fn api_hash(&self, account_id: &str) -> AppResult<Option<String>> {
+        match Self::entry(account_id)?.get_password() {
+            Ok(value) => Ok(Some(value)),
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(_) => Err(AppError::Crypto(
+                "TeleVault could not read this Telegram API hash from the operating-system credential vault"
+                    .into(),
+            )),
+        }
+    }
+
+    pub fn store_api_hash(&self, account_id: &str, api_hash: &str) -> AppResult<()> {
+        if api_hash.trim().len() < 8 {
+            return Err(AppError::Crypto(
+                "The Telegram API hash is invalid and was not stored".into(),
+            ));
+        }
+        let entry = Self::entry(account_id)?;
+        entry.set_password(api_hash).map_err(|_| {
+            AppError::Crypto(
+                "TeleVault could not protect the Telegram API hash in the operating-system credential vault"
+                    .into(),
+            )
+        })?;
+        let verified = entry.get_password().map_err(|_| {
+            AppError::Crypto(
+                "TeleVault could not verify the Telegram API hash after storing it".into(),
+            )
+        })?;
+        if verified != api_hash {
+            return Err(AppError::Crypto(
+                "The operating-system credential vault did not verify the Telegram API hash".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    pub fn remove_api_hash(&self, account_id: &str) -> AppResult<()> {
+        match Self::entry(account_id)?.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Err(_) => Err(AppError::Crypto(
+                "TeleVault could not erase the Telegram API hash from the operating-system credential vault"
+                    .into(),
+            )),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct MasterKeyStore {
     path: PathBuf,
@@ -31,7 +91,7 @@ impl MasterKeyStore {
     pub fn load_or_create(data_dir: impl AsRef<Path>) -> AppResult<Self> {
         let path = data_dir.as_ref().join("vault.key");
         let marker = data_dir.as_ref().join("vault.keychain");
-        let keychain = keyring::Entry::new("app.televault.desktop", "vault-master-key").ok();
+        let keychain = keyring::Entry::new(KEYRING_SERVICE, "vault-master-key").ok();
 
         if marker.exists() {
             let encoded = keychain
@@ -202,13 +262,134 @@ fn decode_key(encoded: &str) -> AppResult<[u8; 32]> {
         .map_err(|_| AppError::Crypto("The keychain recovery key has an invalid length".into()))
 }
 
-fn set_private_permissions(path: &Path) -> AppResult<()> {
+pub fn harden_private_tree(path: &Path) -> AppResult<()> {
+    fs::create_dir_all(path)?;
+    set_private_directory_permissions(path)?;
+    for entry in fs::read_dir(path)? {
+        let entry = entry?;
+        let metadata = fs::symlink_metadata(entry.path())?;
+        if metadata.file_type().is_symlink() {
+            continue;
+        }
+        if metadata.is_dir() {
+            harden_private_tree(&entry.path())?;
+        } else if metadata.is_file() {
+            set_private_file_permissions(&entry.path())?;
+        }
+    }
+    Ok(())
+}
+
+pub fn set_private_directory_permissions(path: &Path) -> AppResult<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
+    }
+    #[cfg(windows)]
+    set_windows_owner_only_acl(path, true)?;
+    Ok(())
+}
+
+pub fn set_private_file_permissions(path: &Path) -> AppResult<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
     }
+    #[cfg(windows)]
+    set_windows_owner_only_acl(path, false)?;
     Ok(())
+}
+
+#[cfg(windows)]
+fn set_windows_owner_only_acl(path: &Path, directory: bool) -> AppResult<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use std::ptr::{null, null_mut};
+    use windows_sys::Win32::Foundation::{LocalFree, ERROR_SUCCESS};
+    use windows_sys::Win32::Security::Authorization::{
+        GetNamedSecurityInfoW, SetEntriesInAclW, SetNamedSecurityInfoW, EXPLICIT_ACCESS_W,
+        SET_ACCESS, SE_FILE_OBJECT, TRUSTEE_IS_SID, TRUSTEE_IS_USER,
+    };
+    use windows_sys::Win32::Security::{
+        ACL, DACL_SECURITY_INFORMATION, NO_INHERITANCE, OWNER_SECURITY_INFORMATION,
+        PROTECTED_DACL_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, PSID,
+        SUB_CONTAINERS_AND_OBJECTS_INHERIT,
+    };
+    use windows_sys::Win32::Storage::FileSystem::FILE_ALL_ACCESS;
+
+    let mut wide_path = path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    let mut owner: PSID = null_mut();
+    let mut descriptor: PSECURITY_DESCRIPTOR = null_mut();
+
+    let status = unsafe {
+        GetNamedSecurityInfoW(
+            wide_path.as_ptr(),
+            SE_FILE_OBJECT,
+            OWNER_SECURITY_INFORMATION,
+            &mut owner,
+            null_mut(),
+            null_mut(),
+            null_mut(),
+            &mut descriptor,
+        )
+    };
+    if status != ERROR_SUCCESS {
+        return Err(std::io::Error::from_raw_os_error(status as i32).into());
+    }
+
+    let explicit = EXPLICIT_ACCESS_W {
+        grfAccessPermissions: FILE_ALL_ACCESS,
+        grfAccessMode: SET_ACCESS,
+        grfInheritance: if directory {
+            SUB_CONTAINERS_AND_OBJECTS_INHERIT
+        } else {
+            NO_INHERITANCE
+        },
+        Trustee: windows_sys::Win32::Security::Authorization::TRUSTEE_W {
+            pMultipleTrustee: null_mut(),
+            MultipleTrusteeOperation: 0,
+            TrusteeForm: TRUSTEE_IS_SID,
+            TrusteeType: TRUSTEE_IS_USER,
+            ptstrName: owner.cast(),
+        },
+    };
+    let mut acl: *mut ACL = null_mut();
+    let acl_status = unsafe { SetEntriesInAclW(1, &explicit, null(), &mut acl) };
+    if acl_status != ERROR_SUCCESS {
+        unsafe {
+            LocalFree(descriptor);
+        }
+        return Err(std::io::Error::from_raw_os_error(acl_status as i32).into());
+    }
+
+    let set_status = unsafe {
+        SetNamedSecurityInfoW(
+            wide_path.as_mut_ptr(),
+            SE_FILE_OBJECT,
+            DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+            null_mut(),
+            null_mut(),
+            acl,
+            null(),
+        )
+    };
+    unsafe {
+        LocalFree(acl.cast());
+        LocalFree(descriptor);
+    }
+    if set_status != ERROR_SUCCESS {
+        return Err(std::io::Error::from_raw_os_error(set_status as i32).into());
+    }
+    Ok(())
+}
+
+fn set_private_permissions(path: &Path) -> AppResult<()> {
+    set_private_file_permissions(path)
 }
 
 #[cfg(test)]
@@ -225,5 +406,32 @@ mod tests {
         let mut different = store.export_recovery();
         different.replace_range(0..1, if &different[0..1] == "A" { "B" } else { "A" });
         assert!(!store.verify_recovery(&different));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn private_tree_permissions_are_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = tempfile::tempdir().unwrap();
+        let nested = temp.path().join("sessions/account");
+        fs::create_dir_all(&nested).unwrap();
+        let file = nested.join("session.bin");
+        fs::write(&file, b"private").unwrap();
+
+        harden_private_tree(temp.path()).unwrap();
+
+        assert_eq!(
+            fs::metadata(temp.path()).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+        assert_eq!(
+            fs::metadata(&nested).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+        assert_eq!(
+            fs::metadata(&file).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
     }
 }

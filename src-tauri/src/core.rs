@@ -11,7 +11,7 @@ use crate::models::{
     ChunkRecord, HealthReport, LockStatus, PreviewInfo, PreviewText, RecoveryReport,
     RecoveryTestReport, ShareRecipient, UploadOptions, VaultFile, VaultFolder, VaultManifest,
 };
-use crate::security::MasterKeyStore;
+use crate::security::{harden_private_tree, set_private_directory_permissions, MasterKeyStore};
 use crate::telegram::{ResolvedRecipient, TelegramManager};
 use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
 use argon2::Argon2;
@@ -154,6 +154,7 @@ pub struct Core {
 impl Core {
     pub fn new(data_dir: &Path) -> AppResult<Arc<Self>> {
         fs::create_dir_all(data_dir)?;
+        harden_private_tree(data_dir)?;
         let catalog = Catalog::new(data_dir.join("televault.sqlite3"))?;
         let locked = catalog.setting("app_lock_hash")?.is_some();
         let master = MasterKeyStore::load_or_create(data_dir)?;
@@ -164,6 +165,7 @@ impl Core {
         let _ = fs::remove_dir_all(work_dir.join("shares"));
         let _ = fs::remove_dir_all(work_dir.join("previews"));
         fs::create_dir_all(&work_dir)?;
+        set_private_directory_permissions(&work_dir)?;
         Ok(Arc::new(Self {
             catalog,
             master,
@@ -3018,6 +3020,7 @@ impl Core {
         }
         let account_key = hex::encode(sha2::Sha256::digest(account_id.as_bytes()));
         let _ = fs::remove_dir_all(self.work_dir.join("avatars").join(account_key));
+        self.telegram.forget_account_credentials(account_id)?;
         self.catalog.remove_account_local(account_id)
     }
 

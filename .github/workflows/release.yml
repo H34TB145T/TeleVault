@@ -2,6 +2,11 @@ name: Build installers
 
 on:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to build
+        required: true
+        default: v0.1.0-alpha
   push:
     tags: ["v*"]
 
@@ -13,25 +18,92 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform: [macos-14, ubuntu-24.04, windows-2022]
-    runs-on: ${{ matrix.platform }}
+        include:
+          - platform: Linux x64
+            os: ubuntu-24.04
+            targets: x86_64-unknown-linux-gnu
+            args: --config src-tauri/tauri.release.conf.json
+            checksum: linux-x64
+          - platform: macOS Universal
+            os: macos-14
+            targets: x86_64-apple-darwin,aarch64-apple-darwin
+            args: --target universal-apple-darwin --config src-tauri/tauri.release.conf.json
+            checksum: macos-universal
+          - platform: Windows x64
+            os: windows-2022
+            targets: x86_64-pc-windows-msvc
+            args: --config src-tauri/tauri.release.conf.json
+            checksum: windows-x64
+    name: ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.targets }}
       - name: Install Linux desktop dependencies
-        if: matrix.platform == 'ubuntu-24.04'
-        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libc++-dev libc++abi-dev
+        if: runner.os == 'Linux'
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          libc++-dev libc++abi-dev
       - run: npm ci
-      - uses: tauri-apps/tauri-action@v0
+      - id: tauri
+        uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TELEVAULT_UPDATE_PUBLIC_KEY: configured
+          TELEVAULT_UPDATE_ENDPOINT: https://github.com/H34TB145T/TeleVault/releases/latest/download/latest.json
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "TeleVault ${{ github.ref_name }}"
-          releaseBody: "See the repository changelog and security notes before installing. Unsigned development builds may trigger operating-system warnings."
+          args: ${{ matrix.args }}
+          tagName: ${{ inputs.tag || github.ref_name }}
+          releaseName: TeleVault ${{ inputs.tag || github.ref_name }}
+          releaseBody: |
+            TeleVault is alpha software. Back up your recovery key and test with non-critical files first.
+
+            These builds are not Apple-notarized or commercially code-signed. Follow the unsigned installation instructions in the README and verify the published SHA-256 checksums.
           releaseDraft: true
-          prerelease: true
+          prerelease: false
+          uploadUpdaterJson: true
+          updaterJsonPreferNsis: true
+      - name: Generate and upload SHA-256 checksums
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          $extensions = @('.dmg', '.AppImage', '.deb', '.rpm', '.msi', '.exe', '.tar.gz')
+          $files = Get-ChildItem 'src-tauri/target' -Recurse -File | Where-Object {
+            $name = $_.Name
+            $_.FullName -match '[\\/]bundle[\\/]' -and
+              -not $name.EndsWith('.sig') -and
+              ($extensions | Where-Object { $name.EndsWith($_) })
+          }
+          if (-not $files) { throw 'No installer artifacts were found for checksums.' }
+          $lines = $files | Sort-Object Name | ForEach-Object {
+            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $($_.Name)"
+          }
+          $checksumFile = "SHA256SUMS-${{ matrix.checksum }}.txt"
+          $lines | Set-Content -Encoding utf8 $checksumFile
+          gh release upload $env:RELEASE_TAG $checksumFile --repo H34TB145T/TeleVault --clobber
+
+  publish:
+    name: Publish verified release
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Publish release after all installers succeed
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: >-
+          gh release edit "$RELEASE_TAG" --repo H34TB145T/TeleVault
+          --draft=false --prerelease=false
