@@ -2075,10 +2075,7 @@ impl Core {
         let caption = if file.folder_path.is_empty() {
             "Sent securely from TiVault".to_string()
         } else {
-            format!(
-                "Sent securely from TiVault · Folder: {}",
-                file.folder_path
-            )
+            format!("Sent securely from TiVault · Folder: {}", file.folder_path)
         };
         let sent_message_id = self
             .telegram

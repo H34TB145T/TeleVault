@@ -1481,7 +1481,10 @@ mod tests {
             "#TiVaultManifest v2 file=current",
             "manifest-current.tvmanifest.json"
         ));
-        assert!(is_vault_manifest_document("", "manifest-portable.tvmanifest.json"));
+        assert!(is_vault_manifest_document(
+            "",
+            "manifest-portable.tvmanifest.json"
+        ));
         assert!(!is_vault_manifest_document("#TiVaultChunk v1", "chunk.bin"));
     }
 }
