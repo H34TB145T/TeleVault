@@ -40,6 +40,10 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
       - name: Install Linux desktop dependencies
         if: runner.os == 'Linux'
@@ -47,4 +51,6 @@ jobs:
           sudo apt-get update && sudo apt-get install -y
           libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
           libc++-dev libc++abi-dev
+      - run: npm ci
+      - run: npm run build:desktop
       - run: cargo test --manifest-path src-tauri/Cargo.toml
