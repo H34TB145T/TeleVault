@@ -1,108 +1,111 @@
 <p align="center">
-  <img src="public/assets/tivault-wordmark.png" width="320" alt="TiVault" />
+  <img src="public/assets/tivault-wordmark.png" width="260" alt="TiVault" />
 </p>
 
-# TiVault
+<p align="center">
+  A private desktop vault that stores your files in your own Telegram Saved Messages.
+</p>
 
-TiVault is a free, open-source desktop vault that stores files in your own Telegram Saved Messages. Files larger than Telegram's per-message limit are streamed into ordered chunks and reconstructed automatically. Optional client-side encryption keeps file content private before it leaves the device.
+## What is TiVault?
 
-The app targets Windows, macOS and Linux. Its responsive localhost web companion uses the same native vault engine while the desktop app is running.
+TiVault is a free, open-source app for Windows, macOS, and Linux. It uploads files to your own Telegram account, keeps a local catalogue of them, and can optionally encrypt files before upload.
 
-## What is implemented
+| You get | What it means |
+| --- | --- |
+| Your Telegram account | Files are sent to your Saved Messages, not a TiVault server. |
+| Large-file support | Files are streamed in 1 GB chunks and rebuilt automatically. |
+| Optional encryption | Files can be encrypted locally before they leave your computer. |
+| Cross-platform app | Native desktop builds for macOS, Windows, and Linux. |
 
-- Telegram user login with API ID/hash, login code and two-step verification support.
-- Direct Saved Messages upload and download over MTProto—no bot or Premium account required.
-- No application-level source-file size limit; bounded 1 GB Telegram chunks are created as needed.
-- Streaming XChaCha20-Poly1305 encryption with independently authenticated frames.
-- Unique per-file encryption keys wrapped by the local vault recovery key.
-- SHA-256 verification for every Telegram chunk and the reconstructed file.
-- Crash-persistent SQLite catalogue and transfer journal.
-- Automatic flat categories for photos, video, audio, documents, archives, applications and other files.
-- Lazy secure thumbnails throughout the normal Vault and folder views for photos, video frames, PDFs and document text.
-- Batch selection, folder upload/download, nested virtual folders, drag-and-drop, pause/resume controls, dark mode and adaptive transfer profiles.
-- Exact SHA-256 duplicate detection before Telegram upload, with an explicit keep-both override.
-- Rename, move and space-efficient logical copy operations backed by independently recoverable manifests.
-- Local-only previews for images, audio, video, PDFs, text and safely extracted document text, with bounded on-disk range caching.
-- Confirmed file and folder sharing to an exact public username or an existing private chat; folders are sent as individual documents, and encrypted content is sent only after a separate readable-copy warning.
-- Independent multi-account vault profiles.
-- One-way Watch Folders that wait for stable files and ignore temporary download extensions.
-- Configurable automatic preview-cache cleanup plus a visible immediate clear action.
-- Vault recovery by scanning TiVault manifests in Telegram Saved Messages.
-- A recovery-test wizard that verifies the recovery key and simulates restoring randomized manifest/chunk samples without changing the catalogue.
-- Periodic, bounded vault health checks that report missing messages, size mismatches and SHA-256 results for small sampled chunks.
-- Operating-system keychain storage for the vault key, plus an optional Argon2id app lock with idle timeout.
-- A 7, 14 or 30-day Recycle Bin; Telegram deletion occurs only at expiry or after a second permanent-delete confirmation.
-- Temporary account disconnect plus explicit Telegram logout/account removal that erases the local TDLib session while retaining Saved Messages for recovery.
-- Bounded automatic transfer retries, FLOOD_WAIT countdowns and opt-in privacy-preserving native notifications.
-- Favourites, local tags, recent files, tag filters and advanced name/date/size/type sorting.
-- A signature-verifying automatic updater runtime. Release signing remains disabled until the maintainer supplies an HTTPS endpoint and a protected signing key as described in `docs/UPDATES.md`.
-- Loopback-only web companion at `http://127.0.0.1:7468` with streamed browser staging.
-- Cross-platform icons, installer configuration and GitHub Actions release builds.
+```mermaid
+flowchart LR
+    A[Your computer] -->|Upload, optionally encrypted| B[TiVault]
+    B -->|Chunks + recovery manifest| C[Your Telegram Saved Messages]
+    C -->|Download and verify| B
+    B --> D[Your restored file]
+```
 
-## Important meaning of “unlimited”
+## Start here
 
-TiVault does not impose a maximum logical file size. It cannot remove Telegram's account, server, network, filesystem or rate limits. TiVault currently uses 1 GB application chunks to keep temporary disk use bounded and remain below Telegram's per-message limits. Telegram may return `FLOOD_WAIT` or throttle sustained transfers; TiVault pauses and resumes instead of attempting to bypass those controls.
+1. Download TiVault from [Releases](../../releases).
+2. Open **Accounts → Connect account**.
+3. Create a Telegram application at [my.telegram.org](https://my.telegram.org/) and enter its API ID and API hash.
+4. Upload a file or folder. TiVault handles chunking, progress, and verification.
+5. Export and store your recovery key somewhere safe.
 
-## Development setup
+> TiVault is alpha software. Start with non-critical files and test recovery before relying on it.
 
-Requirements:
+## Main features
 
-- Node.js 20 or newer
-- Rust stable
-- Platform dependencies required by [Tauri 2](https://v2.tauri.app/start/prerequisites/)
+| Area | Included |
+| --- | --- |
+| Files and folders | Drag and drop, folder upload/download, create folders, rename, move, copy, favorites, tags, sorting, and duplicate detection. |
+| Transfers | Upload/download queue, pause, resume, retries, FLOOD_WAIT handling, speed/progress reporting, and notifications. |
+| Viewing | Local previews and thumbnails for images, videos, audio, PDFs, text, and supported documents. |
+| Privacy | Optional XChaCha20-Poly1305 encryption, recovery key, OS Keychain storage, app lock, and local-only preview cache. |
+| Recovery | Telegram manifest scan, recovery test wizard, vault health checks, and Recycle Bin. |
+| Sharing | Send a readable file or folder copy to a confirmed Telegram user or chat. |
+
+## Security and recovery
+
+| Item | Where it lives |
+| --- | --- |
+| Telegram files | Your Telegram Saved Messages |
+| Telegram API hash and recovery key | macOS Keychain, Windows Credential Manager, or Linux Secret Service |
+| Catalogue, session, and transfer history | Private local application data |
+| Preview cache | Local disk; clear it anytime in Settings |
+
+- Encryption is optional. When enabled, TiVault encrypts the file locally before uploading it.
+- The recovery key is essential for encrypted files. Keep an offline backup.
+- Deleting a file first moves it to the Recycle Bin. Telegram chunks are deleted only after permanent deletion or the selected retention period.
+- Sharing an encrypted vault file creates a separately readable Telegram copy after confirmation. It never shares the recovery key.
+
+Never post your API hash, login code, two-step password, Telegram session, or recovery key in an issue.
+
+## Important limits
+
+TiVault does not impose an application-level maximum file size, but it cannot bypass Telegram limits, network speed, disk space, account limits, or rate limits. Large files are streamed in 1 GB chunks to keep temporary disk use bounded. Telegram may slow a transfer or return `FLOOD_WAIT`; TiVault waits and retries rather than bypassing those controls.
+
+TiVault is not affiliated with Telegram. Use it in accordance with Telegram's terms and local law.
+
+## Install notes
+
+| Platform | Install |
+| --- | --- |
+| macOS | Drag **TiVault** to Applications. Because alpha builds are not Apple-notarized, Control-click → **Open** on first launch if needed. |
+| Windows | Run the NSIS installer. Verify the release checksum before choosing **More info → Run anyway** in SmartScreen. |
+| Linux | Use the `.deb`, `.rpm`, or AppImage package. For AppImage: `chmod +x TiVault*.AppImage`. |
+
+Installers are signed for TiVault's updater and include published SHA-256 checksums, but they are not commercially code-signed or Apple-notarized.
+
+## Build from source
+
+Requirements: Node.js 20+, Rust stable, and the platform dependencies listed in the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/).
 
 ```bash
 npm install
 npm run desktop:dev
 ```
 
-Run verification:
-
 ```bash
+# Verify
 npm run build
 npm test
 cargo test --manifest-path src-tauri/Cargo.toml
-```
 
-Build the installer for the current operating system:
-
-```bash
+# Build a desktop bundle
 npm run desktop:build
 ```
 
-## Installing unsigned alpha builds
+## Project guide
 
-Release installers are cryptographically verified by TiVault's updater but are not commercially code-signed or Apple-notarized. Always download from this repository's Releases page and compare the installer against its published `SHA256SUMS` file.
-
-- **macOS:** Drag TiVault to Applications. On first launch, Control-click the app, choose **Open**, then confirm **Open**. If macOS still blocks it, use **System Settings → Privacy & Security → Open Anyway**. Never disable Gatekeeper globally.
-- **Windows:** Microsoft Defender SmartScreen may show an unknown-publisher warning. Choose **More info → Run anyway** only after verifying the checksum and repository URL.
-- **Linux:** Prefer the packaged `.deb` where supported. For AppImage, mark it executable with `chmod +x TiVault*.AppImage` before running it.
-
-TiVault is alpha software. Export the recovery key, keep an offline backup, and test recovery with non-critical files before relying on the vault.
-
-## Connecting Telegram
-
-1. Create a Telegram application at [my.telegram.org](https://my.telegram.org/).
-2. Open **Accounts → Connect account** in TiVault.
-3. Enter a profile name, international phone number, API ID and API hash.
-4. Complete the normal Telegram code and two-step verification flow.
-
-Never paste a Telegram API hash, login code, two-step password, session database or TiVault recovery key into a GitHub issue.
-
-## Project layout
-
-- `src/` — React/TypeScript interface shared by desktop and web companion.
-- `src-tauri/src/` — Rust catalogue, encryption, chunking, Telegram and localhost server.
-- `src-tauri/icons/` — generated Windows, macOS and Linux application icons.
-- `docs/` — architecture, security and release notes.
-- `.github/workflows/` — CI and cross-platform release builds.
-
-## Current alpha notes
-
-TiVault is early-stage software. Local chunking/encryption and build paths are tested, but maintainers must test live Telegram operations with dedicated development accounts before publishing a stable release. There are no public sharing links: private Saved Messages cannot safely back a universal download URL. “Send via Telegram” instead creates a normal readable document in the confirmed recipient chat. For an encrypted vault file, that action reconstructs and decrypts a temporary copy locally after an explicit warning; it never sends the vault recovery key.
-
-Normal deletion moves files to the Recycle Bin and does not immediately touch Telegram. Emptying the Recycle Bin or allowing its retention deadline to expire removes unshared chunks and recovery manifests from Saved Messages. Removing a Telegram account from TiVault has different semantics: it revokes and erases the local session/catalogue but deliberately leaves its Saved Messages intact for later recovery.
+| Need | Read |
+| --- | --- |
+| Security model | [docs/SECURITY.md](docs/SECURITY.md) |
+| How the app works | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| Signed updates | [docs/UPDATES.md](docs/UPDATES.md) |
+| License | [MIT License](LICENSE) |
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT © 2026 TiVault contributors.
