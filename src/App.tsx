@@ -1067,7 +1067,7 @@ export default function App() {
     <aside className={`sidebar ${mobileNav ? "open" : ""}`}>
       <div className="brand"><img src="/assets/tivault-logo.png" /><span>TiVault</span></div>
       <nav>
-        <button className={view === "vault" ? "active" : ""} onClick={() => { setCurrentFolder(""); stopFileSelection(); nav("vault"); }}><LayoutDashboard /> Vault</button>
+        <button className={view === "vault" ? "active" : ""} onClick={() => { setCategory("All files"); setCurrentFolder(""); stopFileSelection(); nav("vault"); }}><LayoutDashboard /> Vault</button>
         <button className={view === "transfers" ? "active" : ""} onClick={() => nav("transfers")}><RefreshCw /> Transfers {activeTransfers > 0 && <b>{activeTransfers}</b>}</button>
         <button className={view === "watch" ? "active" : ""} onClick={() => nav("watch")}><FolderSync /> Watch folders</button>
       </nav>
