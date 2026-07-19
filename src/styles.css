@@ -219,5 +219,22 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 @media(max-width:620px) {
   .compact-select { max-width: 112px; }
   .trash-row { min-width: 670px; grid-template-columns: 38px minmax(180px, 1.4fr) 1fr auto auto; }
-  .trash-row > span:nth-child(4) { display: none; }
+.trash-row > span:nth-child(4) { display: none; }
 }
+
+/* Lazy PDF thumbnails render the first page with the bundled local PDF engine. */
+.lazy-thumbnail.pdf-thumbnail { background: linear-gradient(145deg, #e5edf8, #fff); }
+.lazy-thumbnail.pdf-thumbnail iframe { display: none; }
+.pdf-thumbnail-canvas { display: none; max-width: 100%; max-height: 100%; background: #fff; box-shadow: 0 4px 13px #17233829; }
+.pdf-thumbnail-canvas.ready { display: block; }
+.pdf-thumbnail-loading { position: absolute; display: grid; place-items: center; color: var(--blue); }
+.pdf-thumbnail-canvas.ready + .pdf-thumbnail-loading { display: none; }
+.pdf-thumbnail-fallback { display: grid; justify-items: center; align-content: center; gap: 4px; color: #d64355; }
+.pdf-thumbnail-fallback small { font-size: 8px; font-weight: 800; }
+
+.about-github { width: 100%; display: flex; align-items: center; gap: 11px; margin-top: 10px; padding: 14px; cursor: pointer; text-align: left; color: var(--ink); border: 1px solid var(--line); border-radius: 13px; background: var(--surface-soft); transition: .18s; }
+.about-github:hover { color: var(--blue); border-color: #83b1f7; transform: translateY(-1px); }
+.about-github span, .about-github small, .about-github strong { display: block; }
+.about-github small { margin-bottom: 3px; color: #6683ad; font-size: 8px; letter-spacing: .9px; }
+.about-github strong { font: 700 13px Manrope; }
+.about-github svg:last-child { margin-left: auto; }

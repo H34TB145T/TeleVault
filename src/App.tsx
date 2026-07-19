@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Archive, ArrowDownToLine, ArrowUpToLine, AudioLines, BadgeCheck, Check, CheckSquare2, ChevronLeft, ChevronRight, CircleAlert,
+  Archive, ArrowDownToLine, ArrowUpToLine, AudioLines, BadgeCheck, Check, CheckSquare2, ChevronLeft, ChevronRight, CircleAlert, ExternalLink, Github,
   Cloud, Copy, Download, Edit3, Eye, File, FileArchive, FileBox, FileText, Folder, FolderInput, FolderPlus, FolderSync, FolderUp, Gauge, Grid2X2,
   HardDrive, Image, Info, KeyRound, LayoutDashboard, Link2, List, Lock, LockKeyhole, Menu, MonitorDown,
   Activity, Bell, Clock3, History, LogOut, Moon, Pause, Play, Plus, RefreshCw, RotateCcw, Search, Send, Settings, Share2, ShieldCheck,
@@ -210,6 +210,48 @@ function PdfPreview({ url, name, size }: { url: string; name: string; size: numb
   </div>;
 }
 
+function PdfThumbnail({ url, name, size, compact }: { url: string; name: string; size: number; compact: boolean }) {
+  const canvas = useRef<HTMLCanvasElement | null>(null);
+  const [ready, setReady] = useState(false);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    const controller = new AbortController();
+    let cancelled = false;
+    let task: PDFDocumentLoadingTask | null = null;
+    setReady(false); setFailed(false);
+    // A grid can contain many PDFs, so thumbnails remain deliberately bounded.
+    if (size > 12 * 1024 * 1024) { setFailed(true); return () => controller.abort(); }
+    void (async () => {
+      try {
+        const response = await fetch(url, { signal: controller.signal, credentials: "omit" });
+        if (!response.ok) throw new Error("TiVault could not retrieve the PDF thumbnail.");
+        task = getDocument({ data: new Uint8Array(await response.arrayBuffer()), disableRange: true, disableStream: true, disableAutoFetch: true, enableXfa: false });
+        const document = await task.promise;
+        const page = await document.getPage(1);
+        if (cancelled || !canvas.current) return;
+        const maxWidth = compact ? 28 : 220;
+        const maxHeight = compact ? 28 : 130;
+        const base = page.getViewport({ scale: 1 });
+        const deviceScale = Math.min(window.devicePixelRatio || 1, 2);
+        const scale = Math.max(0.05, Math.min(maxWidth / base.width, maxHeight / base.height) * deviceScale);
+        const viewport = page.getViewport({ scale });
+        const element = canvas.current;
+        element.width = Math.ceil(viewport.width);
+        element.height = Math.ceil(viewport.height);
+        element.style.width = `${Math.ceil(viewport.width / deviceScale)}px`;
+        element.style.height = `${Math.ceil(viewport.height / deviceScale)}px`;
+        await page.render({ canvas: element, viewport }).promise;
+        if (!cancelled) setReady(true);
+      } catch {
+        if (!cancelled && !controller.signal.aborted) setFailed(true);
+      }
+    })();
+    return () => { cancelled = true; controller.abort(); if (task) void task.destroy(); };
+  }, [compact, size, url]);
+  if (failed) return <span className="pdf-thumbnail-fallback"><FileText size={compact ? 18 : 30} /><small>PDF</small></span>;
+  return <><canvas ref={canvas} className={`pdf-thumbnail-canvas ${ready ? "ready" : ""}`} aria-label={`First page of ${name}`} /><span className="pdf-thumbnail-loading"><RefreshCw className="spin" size={compact ? 14 : 19} /></span></>;
+}
+
 function LazyFileThumbnail({ file, compact = false }: { file: VaultFile; compact?: boolean }) {
   const host = useRef<HTMLSpanElement | null>(null);
   const [visible, setVisible] = useState(false);
@@ -226,7 +268,7 @@ function LazyFileThumbnail({ file, compact = false }: { file: VaultFile; compact
     return () => observer.disconnect();
   }, []);
   useEffect(() => {
-    if (!visible || file.thumbnail || failed || isPdf) return;
+    if (!visible || file.thumbnail || failed) return;
     let cancelled = false;
     let token = "";
     void api.startPreview(file.id).then((preview) => {
@@ -238,12 +280,12 @@ function LazyFileThumbnail({ file, compact = false }: { file: VaultFile; compact
       }
     }).catch(() => { if (!cancelled) setFailed(true); });
     return () => { cancelled = true; if (token) void api.stopPreview(token); };
-  }, [compact, failed, file.id, file.thumbnail, isPdf, visible]);
+  }, [compact, failed, file.id, file.thumbnail, visible]);
   const className = compact ? "lazy-thumbnail compact" : "lazy-thumbnail";
   if (file.thumbnail) return <span ref={host} className={className}><img src={file.thumbnail} alt="" /></span>;
   if (!failed && info?.kind === "image") return <span ref={host} className={className}><img src={info.url} alt="" onError={() => setFailed(true)} /></span>;
   if (!failed && info?.kind === "video") return <span ref={host} className={className}><video src={info.url} muted playsInline preload="metadata" onLoadedMetadata={(event) => { if (Number.isFinite(event.currentTarget.duration)) event.currentTarget.currentTime = Math.min(0.2, event.currentTarget.duration / 2); }} onError={() => setFailed(true)} /></span>;
-  if (isPdf) return <span ref={host} className={`${className} document-thumbnail`}><FileText size={28} /><small>PDF document</small></span>;
+  if (isPdf) return <span ref={host} className={`${className} pdf-thumbnail`}>{info ? <PdfThumbnail url={info.url} name={file.name} size={info.size} compact={compact} /> : visible ? <RefreshCw className="spin" size={compact ? 16 : 28} /> : <FileText size={compact ? 19 : 46} />}</span>;
   if (!compact && (info?.kind === "text" || info?.kind === "document")) return <span ref={host} className={`${className} document-thumbnail`}><FileText size={28} /><small>{textPreview || file.name}</small></span>;
   return <span ref={host} className={className} style={{ color: visual.color }}>{visible && !failed && !info ? <RefreshCw className="spin" size={compact ? 16 : 28} /> : <Icon size={compact ? 19 : 46} strokeWidth={1.5} />}</span>;
 }
@@ -721,7 +763,16 @@ function SettingsView({ data, onRefresh, onCacheCleared, setTheme, onLock, confi
 }
 
 function AboutView() {
-  return <div className="content-page about-page"><div className="about-card"><div className="about-brand"><img src="/assets/tivault-logo.png" alt="TiVault logo" /><div><span className="eyebrow">ABOUT TIVAULT</span><h1>TiVault</h1><p>Your private, encrypted file vault backed by Telegram Saved Messages.</p></div></div><div className="about-details"><div><span>Version</span><strong>0.1.1-alpha</strong></div><div><span>Developer</span><strong>H34TB145T</strong></div><div><span>Storage</span><strong>Telegram Saved Messages</strong></div><div><span>Privacy</span><strong>Optional client-side encryption</strong></div></div><div className="about-credit"><ShieldCheck size={18} /><span><small>DESIGNED AND DEVELOPED BY</small><strong>H34TB145T</strong></span></div></div></div>;
+  const openGithub = async () => {
+    const url = "https://github.com/H34TB145T";
+    if ("__TAURI_INTERNALS__" in window) {
+      const { openUrl } = await import("@tauri-apps/plugin-opener");
+      await openUrl(url);
+    } else {
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
+  };
+  return <div className="content-page about-page"><div className="about-card"><div className="about-brand"><img src="/assets/tivault-logo.png" alt="TiVault logo" /><div><span className="eyebrow">ABOUT TIVAULT</span><h1>TiVault</h1><p>Your private, encrypted file vault backed by Telegram Saved Messages.</p></div></div><div className="about-details"><div><span>Version</span><strong>0.1.1-alpha</strong></div><div><span>Developer</span><strong>H34TB145T</strong></div><div><span>Storage</span><strong>Telegram Saved Messages</strong></div><div><span>Privacy</span><strong>Optional client-side encryption</strong></div></div><div className="about-credit"><ShieldCheck size={18} /><span><small>DESIGNED AND DEVELOPED BY</small><strong>H34TB145T</strong></span></div><button className="about-github" onClick={() => void openGithub()}><Github size={18} /><span><small>OPEN-SOURCE PROJECT</small><strong>github.com/H34TB145T</strong></span><ExternalLink size={15} /></button></div></div>;
 }
 
 function RecycleBinView({ files, onRestore, onDelete, onEmpty }: { files: VaultFile[]; onRestore: (file: VaultFile) => void; onDelete: (file: VaultFile) => void; onEmpty: () => void }) {
